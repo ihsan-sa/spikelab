@@ -17,10 +17,16 @@ and POST /api/run must be application/json, which no cross-site form or no-cors 
 Public mode (off unless a public host is given) is for serving behind Cloudflare Access. It still binds
 127.0.0.1; Host and Origin also accept the public hostname over https, and every request must carry a valid
 Access assertion for an allowed email (spikelab/access.py), else 403 with no detail.
+
+Every method other than GET and POST takes the same checks and then a flat 405, so nothing is answered
+before the checks run. A caller is told what it did wrong and nothing about the inside: what the run
+printed and what raised go to the log. A connection that stalls is dropped (TIMEOUT), and only
+MAX_CONNECTIONS of them are handled at once, so a stalled caller cannot hold a thread or the box's memory.
 """
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import signal
@@ -35,8 +41,11 @@ from .registry import ComponentError
 
 HOST = "127.0.0.1"
 MAX_BODY = 64 * 1024
+TIMEOUT = 15          # seconds a connection may stall mid-request before it is dropped
+MAX_CONNECTIONS = 16  # connections handled at once; past this one is closed, unaccepted
 PAGE = (Path(__file__).parent / "web.html").read_text()
 GUIDE = Path(__file__).parent.parent / "docs" / "spikelab-guide.pdf"
+log = logging.getLogger("spikelab.web")
 
 
 class Busy(Exception):
@@ -74,7 +83,11 @@ class App:
                 "toml": (out / "config.toml").read_text()}
 
     def _child(self, cfg: dict, out: Path) -> dict:
-        """Run cfg in spikelab.worker; kill its whole process group at the time limit."""
+        """Run cfg in spikelab.worker; kill its whole process group at the time limit.
+
+        What the child printed goes to the log. The caller gets a short fixed reason, except for the
+        child's own complaint about the config (exit 2), which names a field the caller itself sent.
+        """
         out.mkdir(parents=True, exist_ok=True)
         (out / "request.toml").write_text(config.dumps(cfg))
         env = {**os.environ, "OMP_NUM_THREADS": "2"}
@@ -88,12 +101,17 @@ class App:
             p.communicate()
             raise ComponentError(f"stopped: the run went over the {self.seconds:g} s time limit")
         if p.returncode != 0:
-            lines = stderr.strip().splitlines()
-            raise ComponentError(lines[-1] if lines else f"the run failed (exit {p.returncode})")
+            log.warning("run %s failed (exit %s): %s", out.name, p.returncode, stderr.strip()[-4000:])
+            if p.returncode == 2:  # worker: a ComponentError, i.e. the posted config, named by its own field
+                lines = [ln for ln in stderr.strip().splitlines() if ln.strip()]
+                raise ComponentError(lines[-1][:200] if lines else "the config could not be used")
+            if p.returncode == 3:  # worker: out of memory
+                raise ComponentError("stopped: the run ran out of memory")
+            raise ComponentError("the run failed")
         return json.loads((out / "metrics.json").read_text())
 
 
-def make_handler(app: App, port: int, public_host: str | None = None, access=None):
+def make_handler(app: App, port: int, public_host: str | None = None, access=None, conn_timeout: float = TIMEOUT):
     allowed = {f"{HOST}:{port}", f"localhost:{port}"}
     origins = {f"http://{h}" for h in allowed}
     if public_host:
@@ -101,13 +119,21 @@ def make_handler(app: App, port: int, public_host: str | None = None, access=Non
         origins.add(f"https://{public_host}")
 
     class Handler(BaseHTTPRequestHandler):
+        # No version banner: the base class answers a malformed or oversized request line before any check here.
+        server_version, sys_version = "spikelab", ""
+        timeout = conn_timeout  # http.server drops the connection when a read takes longer than this
+
+        def version_string(self):
+            return self.server_version  # the base class would glue the Python version on the end
+
         def _send(self, code, body, ctype="application/json"):
             data = body if isinstance(body, bytes) else (json.dumps(body) if ctype == "application/json" else body).encode()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(data)
+            if self.command != "HEAD":  # a HEAD answer carries the headers and no body
+                self.wfile.write(data)
 
         def _caller_ok(self):
             if access is not None and access.email(self.headers) is None:
@@ -147,18 +173,59 @@ def make_handler(app: App, port: int, public_host: str | None = None, access=Non
             ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
             if ctype != "application/json":
                 return self._send(415, {"error": "send application/json"})
-            n = int(self.headers.get("Content-Length") or 0)
-            if n > MAX_BODY:
-                return self._send(413, {"error": "config too large"})
+            body = self._body()
+            if body is None:
+                return
             try:
-                res = app.run(json.loads(self.rfile.read(n)))
+                posted = json.loads(body)
+            except ValueError:
+                return self._send(400, {"error": "the body is not JSON"})
+            if not isinstance(posted, dict):
+                return self._send(400, {"error": "the body must be a JSON object"})
+            try:
+                res = app.run(posted)
             except Busy as e:
                 return self._send(409, {"error": str(e)})
-            except ComponentError as e:
+            except ComponentError as e:  # names a field the caller sent, so it is the caller's to see
                 return self._send(400, {"error": str(e)})
-            except Exception as e:  # a bad value must not take the server down; say what broke
-                return self._send(400, {"error": f"{type(e).__name__}: {e}"})
+            except Exception:  # a bad value must not take the server down, nor describe the inside
+                log.exception("POST /api/run failed")
+                return self._send(400, {"error": "the config could not be used"})
             self._send(200, res)
+
+        def _body(self) -> bytes | None:
+            """The request body, or None once this method has answered. Never reads more than MAX_BODY.
+
+            Content-Length is whatever the caller typed: -1 would read to EOF and letters would raise.
+            """
+            raw = self.headers.get("Content-Length")
+            try:
+                n = int(raw) if raw is not None else 0
+            except ValueError:
+                self._send(400, {"error": "bad Content-Length"})
+                return None
+            if n > MAX_BODY:
+                self._send(413, {"error": "config too large"})
+                return None
+            if n < 0:
+                self._send(400, {"error": "bad Content-Length"})
+                return None
+            data = self.rfile.read(n)
+            if len(data) != n:
+                self._send(400, {"error": "the body ended early"})
+                return None
+            return data
+
+        def __getattr__(self, name):
+            """Any other method: the base class would answer 501 itself, before the checks. This does not."""
+            if name.startswith("do_"):
+                return self._other
+            raise AttributeError(name)
+
+        def _other(self):
+            if not self._caller_ok():
+                return
+            self._send(405, {"error": "method not allowed"})
 
         def log_message(self, fmt, *args):
             pass
@@ -166,13 +233,39 @@ def make_handler(app: App, port: int, public_host: str | None = None, access=Non
     return Handler
 
 
-def make_server(config_path: str, port: int, public_host: str | None = None, access=None) -> ThreadingHTTPServer:
+class Server(ThreadingHTTPServer):
+    """A ceiling on connections held at once: a caller that stalls must not cost a thread each time."""
+
+    max_connections = MAX_CONNECTIONS
+
+    def __init__(self, *args, **kwargs):
+        self._live, self._live_lock = set(), threading.Lock()
+        super().__init__(*args, **kwargs)
+
+    def verify_request(self, request, client_address):
+        with self._live_lock:
+            if len(self._live) >= self.max_connections:
+                return False  # socketserver closes it; no handler thread is started
+            self._live.add(request)
+        return True
+
+    def shutdown_request(self, request):
+        try:
+            super().shutdown_request(request)
+        finally:
+            with self._live_lock:
+                self._live.discard(request)
+
+
+def make_server(config_path: str, port: int, public_host: str | None = None, access=None,
+                conn_timeout: float = TIMEOUT, max_connections: int = MAX_CONNECTIONS) -> ThreadingHTTPServer:
     """public_host and access go together: both set is public mode, both None is local mode."""
     if (public_host is None) != (access is None):
         raise ValueError("public mode needs both a public host and an Access verifier")
     app = App(config_path)
-    srv = ThreadingHTTPServer((HOST, port), None)
-    srv.RequestHandlerClass = make_handler(app, srv.server_address[1], public_host, access)
+    srv = Server((HOST, port), None)
+    srv.max_connections = max_connections
+    srv.RequestHandlerClass = make_handler(app, srv.server_address[1], public_host, access, conn_timeout)
     srv.app = app
     return srv
 

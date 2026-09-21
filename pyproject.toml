@@ -3,7 +3,9 @@ name = "spikelab"
 version = "0.1.0"
 description = "A small workbench for spiking neural networks"
 requires-python = ">=3.12"
-dependencies = ["torch>=2.0", "numpy", "matplotlib", "PyJWT[crypto]>=2.6"]
+# PyJWT 2.14 is the floor: before it, every token with an unknown key id refetched the Access key set
+# (GHSA-2gx3-rcp4-g85q), so a caller could drive our outbound fetches. 2.14 adds the cooldown.
+dependencies = ["torch>=2.0", "numpy", "matplotlib", "PyJWT[crypto]>=2.14"]
 
 [project.optional-dependencies]
 dev = ["pytest"]

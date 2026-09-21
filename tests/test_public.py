@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from spikelab import cli, config, web
 from spikelab.access import Access
-from test_web import req
+from test_web import raw, req
 
 TEAM, AUD, HOST = "testteam", "test-aud", "spike.example.com"
 ISS = f"https://{TEAM}.cloudflareaccess.com"
@@ -98,6 +98,15 @@ def test_everything_else_is_403_with_no_detail(public, tiny_patterns, why, tok):
                                ("GET", "/guide.pdf", None)):
         code, out = req(public, method, path, body, host=HOST, headers=headers)
         assert (code, json.loads(out)) == (403, {"error": "forbidden"}), (why, path)
+
+
+@pytest.mark.parametrize("method", ["HEAD", "OPTIONS", "PUT", "DELETE", "WHAT"])
+def test_another_method_takes_the_access_check_too(public, method):
+    """The base class used to answer these itself, before the gate, with its version in the header."""
+    code, headers, body = raw(public, method, "/", headers={"Host": HOST})
+    assert code == 403 and headers["Server"] == "spikelab" and b"Python" not in body
+    code, headers, _ = raw(public, method, "/", headers={"Host": HOST, "Cf-Access-Jwt-Assertion": token()})
+    assert code == 405 and headers["Server"] == "spikelab"
 
 
 def test_public_mode_still_refuses_foreign_host_and_origin(public):

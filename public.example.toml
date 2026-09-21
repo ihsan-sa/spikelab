@@ -1,0 +1,6 @@
+# Public mode for `spikelab serve --public-config public.toml`. Copy to public.toml (gitignored) and fill in.
+# None of these is a secret. See docs/GUIDE.md, "Putting it online".
+public_host = "spike.example.com"
+access_team = "myteam"            # the <team> in <team>.cloudflareaccess.com
+access_aud = "0123abcd..."        # the Access application's Application Audience (AUD) tag
+allow_email = ["me@example.com", "friend@example.com"]

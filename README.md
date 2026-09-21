@@ -9,4 +9,9 @@ python3 -m venv .venv && .venv/bin/pip install --index-url https://download.pyto
 ```
 
 `run` writes figures to the config's `out` folder. `serve` opens http://127.0.0.1:8765/ (loopback only).
-Tests: `.venv/bin/pytest` (about 30 s). Guide figures: `.venv/bin/python scripts/make_figures.py`, then `.venv/bin/python scripts/build_doc.py` for the web screenshot and the PDF.
+
+Public mode (behind Cloudflare Access; see the guide, "Putting it online"). As a systemd user unit:
+`cp public.example.toml public.toml` and fill it in; `cp deploy/spikelab.service ~/.config/systemd/user/`;
+`systemctl --user daemon-reload && systemctl --user enable --now spikelab`. It serves 127.0.0.1:8765 only; stop any local `spikelab serve` on that port first.
+
+Tests: `.venv/bin/pytest` (about 75 s). Guide figures: `.venv/bin/python scripts/make_figures.py`, then `.venv/bin/python scripts/build_doc.py` for the web screenshot and the PDF.

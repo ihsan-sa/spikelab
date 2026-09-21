@@ -72,7 +72,7 @@ document.getElementById("go").onclick=async()=>{
   let cfg; try{cfg=collect();}catch(e){err.textContent="bad field: "+e; return;}
   st.textContent="running…"; document.getElementById("go").disabled=true;
   try{
-    const r=await fetch("/api/run",{method:"POST",body:JSON.stringify(cfg)}); const j=await r.json();
+    const r=await fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)}); const j=await r.json();
     if(!r.ok){err.textContent=j.error; st.textContent="";}
     else{
       st.textContent=`done in ${j.seconds}s`;

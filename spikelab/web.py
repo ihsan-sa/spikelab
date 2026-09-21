@@ -6,7 +6,10 @@ POST /api/run      a config as JSON -> runs it, returns metrics, figure URLs and
 GET /runs/<n>/<f>  a figure from run n
 
 The page cannot load plugins or pick the output folder: those come from the config it started with.
-Requests whose Host is not this machine's loopback are refused, so another site cannot drive it.
+
+Three checks keep another site in the owner's browser from driving this server:
+Host must be this machine's loopback, an Origin (if sent at all) must be this server's own,
+and POST /api/run must be application/json, which no cross-site form or no-cors fetch can send.
 """
 from __future__ import annotations
 
@@ -50,6 +53,7 @@ class App:
 
 def make_handler(app: App, port: int):
     allowed = {f"{HOST}:{port}", f"localhost:{port}"}
+    origins = {f"http://{h}" for h in allowed}
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code, body, ctype="application/json"):
@@ -60,14 +64,18 @@ def make_handler(app: App, port: int):
             self.end_headers()
             self.wfile.write(data)
 
-        def _host_ok(self):
-            if self.headers.get("Host") in allowed:
-                return True
-            self._send(403, {"error": "loopback only"})
-            return False
+        def _caller_ok(self):
+            if self.headers.get("Host") not in allowed:
+                self._send(403, {"error": "loopback only"})
+                return False
+            origin = self.headers.get("Origin")  # absent for curl and for a same-origin GET
+            if origin is not None and origin not in origins:
+                self._send(403, {"error": "cross-site request"})
+                return False
+            return True
 
         def do_GET(self):
-            if not self._host_ok():
+            if not self._caller_ok():
                 return
             if self.path == "/":
                 return self._send(200, PAGE, "text/html; charset=utf-8")
@@ -81,10 +89,14 @@ def make_handler(app: App, port: int):
             self._send(404, {"error": "not found"})
 
         def do_POST(self):
-            if not self._host_ok():
+            if not self._caller_ok():
                 return
             if self.path != "/api/run":
                 return self._send(404, {"error": "not found"})
+            # application/json forces a preflight, so a cross-site no-cors POST cannot reach this.
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ctype != "application/json":
+                return self._send(415, {"error": "send application/json"})
             n = int(self.headers.get("Content-Length") or 0)
             if n > MAX_BODY:
                 return self._send(413, {"error": "config too large"})

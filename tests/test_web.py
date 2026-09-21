@@ -19,10 +19,15 @@ def server(tmp_path, tiny_patterns):
     srv.shutdown()
 
 
-def req(srv, method, path, body=None, host=None):
+def req(srv, method, path, body=None, host=None, origin=None, ctype="application/json"):
     port = srv.server_address[1]
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
-    c.request(method, path, body=body, headers={"Host": host or f"127.0.0.1:{port}"})
+    headers = {"Host": host or f"127.0.0.1:{port}"}
+    if body is not None and ctype is not None:
+        headers["Content-Type"] = ctype
+    if origin is not None:
+        headers["Origin"] = origin
+    c.request(method, path, body=body, headers=headers)
     r = c.getresponse()
     return r.status, r.read()
 
@@ -30,6 +35,25 @@ def req(srv, method, path, body=None, host=None):
 def test_binds_loopback_and_refuses_foreign_host(server):
     assert server.server_address[0] == "127.0.0.1"
     assert req(server, "GET", "/", host="evil.example")[0] == 403
+
+
+def test_refuses_another_sites_origin(server, tiny_patterns):
+    body = json.dumps(tiny_patterns)
+    assert req(server, "POST", "/api/run", body, origin="http://evil.example")[0] == 403
+    assert req(server, "GET", "/", origin="http://evil.example")[0] == 403
+    port = server.server_address[1]
+    for good in (f"http://127.0.0.1:{port}", f"http://localhost:{port}"):
+        assert req(server, "GET", "/api/state", origin=good)[0] == 200
+
+
+def test_refuses_a_post_that_is_not_json(server, tiny_patterns):
+    port = server.server_address[1]
+    body, origin = json.dumps(tiny_patterns), f"http://127.0.0.1:{port}"
+    assert req(server, "POST", "/api/run", body, origin=origin, ctype="text/plain")[0] == 415
+    assert req(server, "POST", "/api/run", body, origin=origin, ctype=None)[0] == 415
+    code, _ = req(server, "POST", "/api/run", body, origin=origin,
+                  ctype="application/json; charset=utf-8")
+    assert code == 200
 
 
 def test_page_lists_registries_and_runs(server, tiny_patterns):

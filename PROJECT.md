@@ -22,6 +22,9 @@ Owner, #iiks1 1790020802.388939, 2026-09-21: "keep the initial run more simple i
 
 He added right after (1790020827.798069): "but quality high". Small in scope, not rough: what the first run does include is correct, checked against known results, cleanly split so the next piece drops in, and the document is good enough to show someone.
 
+## Interface
+Owner, 1790020851.993369: "get creative knowing what is available on our setup, could have a web interface like spike.ihsan.cc or something". So a web interface is welcome, and the choice is yours: look at how the box already serves its pages (the dashboard, the lessons site, the inbox page) before inventing anything. Build and prove it on localhost. Putting it on a public hostname is still one approval card to him when it is ready, behind the same sign-in the box's other pages use. Still the small first run above.
+
 ## Done
 He changes each of those five things from the interface and sees the network behave differently. The document with its diagrams is posted as a file in this project's channel.
 

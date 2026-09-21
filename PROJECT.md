@@ -17,6 +17,9 @@ Owner, #iiks1 1790020721.201009, 2026-09-21: "I want to make a spiking neural ne
 - Spend is the box's first priority (`~/WORKING.md`): workers on Opus by default, subagents for bounded pieces, hand off at about 150k tokens.
 - The repo is private under the owner's GitHub account. If making it is refused, ask in #iiks1-threads.
 
+## First run: small and cheap
+Owner, #iiks1 1790020802.388939, 2026-09-21: "keep the initial run more simple i dont want to run too much usage for this -- cost low, initial dev". So the first milestone is the smallest thing that shows the idea: one engine, one or two neuron models, STDP and one gradient rule, an interface as plain as a config file or a small CLI, and the short document. One Opus worker with a budget around $10, no parallel workers, no long planning context. Then stop, show him, and let him say what comes next.
+
 ## Done
 He changes each of those five things from the interface and sees the network behave differently. The document with its diagrams is posted as a file in this project's channel.
 

@@ -16,11 +16,25 @@ def _save(fig, path):
     plt.close(fig)
 
 
-def raster(x, spikes, dt, path):
-    """Input and every layer for the first sample. x [T,B,n], spikes list of [T,B,n]."""
+def _current(ax, current, dt, k=3):
+    """The injected current of the first k neurons, first sample. current [T,B,n]."""
+    t = torch.arange(current.shape[0]).numpy() * dt * 1e3
+    for j in range(min(k, current.shape[2])):
+        ax.plot(t, current[:, 0, j].numpy(), lw=1)
+    ax.set_ylabel("current")
+
+
+def raster(x, spikes, dt, path, current=None):
+    """Input and every layer for the first sample. x [T,B,n], spikes list of [T,B,n].
+
+    With `current` (a current task) x is the driven input neurons' spikes, and the current goes on top.
+    """
     rows = [("input", x)] + [(f"layer {i + 1}", s) for i, s in enumerate(spikes)]
-    fig, axes = plt.subplots(len(rows), 1, figsize=(7, 1.2 + 1.3 * len(rows)), sharex=True, squeeze=False)
-    for ax, (label, s) in zip(axes[:, 0], rows):
+    top = 0 if current is None else 1
+    fig, axes = plt.subplots(len(rows) + top, 1, figsize=(7, 1.2 + 1.3 * (len(rows) + top)), sharex=True, squeeze=False)
+    if top:
+        _current(axes[0, 0], current, dt)
+    for ax, (label, s) in zip(axes[top:, 0], rows):
         t, n = torch.nonzero(s[:, 0], as_tuple=True)
         ax.scatter(t.numpy() * dt * 1e3, n.numpy(), s=3, c=INK, marker="|")
         ax.set_ylabel(label)
@@ -30,9 +44,14 @@ def raster(x, spikes, dt, path):
     _save(fig, path)
 
 
-def membrane(v, dt, path, v_th=1.0, k=3):
-    """Membrane of the first k neurons of the first non-input layer."""
-    fig, ax = plt.subplots(figsize=(7, 3))
+def membrane(v, dt, path, v_th=1.0, k=3, current=None, title="layer 1"):
+    """Membrane of the first k neurons of a layer; with `current`, the current driving them on top."""
+    if current is None:
+        fig, ax = plt.subplots(figsize=(7, 3))
+    else:
+        fig, (top, ax) = plt.subplots(2, 1, figsize=(7, 4.5), sharex=True, height_ratios=(1, 2))
+        _current(top, current, dt, k)
+        top.set_title("Injected current")
     v = v.detach().numpy()
     t = torch.arange(v.shape[0]).numpy() * dt * 1e3
     for j in range(min(k, v.shape[2])):
@@ -40,7 +59,7 @@ def membrane(v, dt, path, v_th=1.0, k=3):
         ax.axhline(v_th + 1.5 * j, color="grey", lw=0.5, ls=":")
     ax.set_xlabel("time (ms)")
     ax.set_ylabel("v (offset per neuron)")
-    ax.set_title("Membrane potential, layer 1")
+    ax.set_title(f"Membrane potential, {title}")
     _save(fig, path)
 
 

@@ -77,7 +77,8 @@ def describe() -> dict:
     """Everything the interface needs: healthy components with defaults, broken ones with reasons."""
     return {
         k: {
-            "ok": {n: {"defaults": c.defaults, "doc": (c.__doc__ or "").strip().split("\n")[0]} for n, c in sorted(_ok[k].items())},
+            "ok": {n: {"defaults": c.defaults, "doc": (c.__doc__ or "").strip().split("\n")[0]}
+                   | ({"drive": c.drive} if hasattr(c, "drive") else {}) for n, c in sorted(_ok[k].items())},
             "broken": dict(broken[k]),
         }
         for k in KINDS

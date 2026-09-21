@@ -2,8 +2,8 @@
 
 GET /              the page
 GET /api/state     registries (with broken components and why) and the starting config
-POST /api/run      a config as JSON -> runs it, returns metrics, figure URLs and the config as TOML
-GET /runs/<n>/<f>  a figure from run n
+POST /api/run      a config as JSON -> runs it, returns metrics, figure and weights URLs and the config as TOML
+GET /runs/<n>/<f>  a figure from run n, or weights.json: its learned weights for the network diagram
 GET /guide.pdf     the guide, docs/spikelab-guide.pdf
 
 The page cannot load plugins or pick the output folder: those come from the config it started with.
@@ -79,7 +79,7 @@ class App:
         finally:
             self.lock.release()
         return {"final": res["final"], "seconds": res["seconds"],
-                "figures": [f"/runs/{n}/{f}" for f in res["figures"]],
+                "figures": [f"/runs/{n}/{f}" for f in res["figures"]], "weights": f"/runs/{n}/weights.json",
                 "toml": (out / "config.toml").read_text()}
 
     def _child(self, cfg: dict, out: Path) -> dict:
@@ -162,6 +162,9 @@ def make_handler(app: App, port: int, public_host: str | None = None, access=Non
                 f = app.root / m[1] / f"{m[2]}.png"
                 if f.is_file():
                     return self._send(200, f.read_bytes(), "image/png")
+            m = re.fullmatch(r"/runs/(\d+)/weights\.json", self.path)
+            if m and (app.root / m[1] / "weights.json").is_file():
+                return self._send(200, (app.root / m[1] / "weights.json").read_bytes())
             self._send(404, {"error": "not found"})
 
         def do_POST(self):

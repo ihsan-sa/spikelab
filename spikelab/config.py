@@ -68,7 +68,13 @@ def build(cfg: dict):
     if arch.p.get("sizes", [task.n_in])[0] != task.n_in:
         raise ComponentError(f"architecture sizes[0]={arch.p['sizes'][0]} but task {task.name!r} has {task.n_in} inputs")
     net = arch.build(lambda n: neuron_cls(n, dt, **np_), lambda n: syn_cls(n, dt, **sp), topo, dt, gen)
-    rule = get("rule", cfg["rule"]["name"])(**_params(cfg["rule"]))
+    if getattr(task, "drive", "spikes") == "current":
+        net.input_neuron = neuron_cls(task.n_in, dt, **np_)
+    rule_cls = get("rule", cfg["rule"]["name"])
+    if getattr(rule_cls, "needs_labels", False) and task.n_classes is None:
+        raise ComponentError(f"rule {rule_cls.name!r} needs a labelled task; task {task.name!r} has no labels"
+                             " (use rule 'stdp' or 'none')")
+    rule = rule_cls(**_params(cfg["rule"]))
     return cfg, net, rule, task, gen
 
 

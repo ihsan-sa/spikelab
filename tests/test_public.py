@@ -70,9 +70,10 @@ def test_good_token_is_let_in_everywhere(public, tiny_patterns):
     code, body = req(public, "POST", "/api/run", json.dumps(tiny_patterns), host=HOST,
                      origin=f"https://{HOST}", headers={"Cf-Access-Jwt-Assertion": tok})
     assert code == 200, body
-    fig = json.loads(body)["figures"][0]
-    assert get(public, tok, fig)[0] == 200
-    assert get(public, None, fig)[0] == 403
+    for url in (json.loads(body)["figures"][0], json.loads(body)["weights"]):
+        assert get(public, tok, url)[0] == 200
+        assert get(public, None, url)[0] == 403
+        assert get(public, token(email="stranger@example.com"), url)[0] == 403
 
 
 @pytest.mark.parametrize("why, tok", [
@@ -95,6 +96,7 @@ def test_everything_else_is_403_with_no_detail(public, tiny_patterns, why, tok):
     headers = {"Cf-Access-Jwt-Assertion": tok} if tok else {}
     for method, path, body in (("GET", "/", None), ("GET", "/api/state", None),
                                ("POST", "/api/run", json.dumps(tiny_patterns)), ("GET", "/runs/1/raster.png", None),
+                               ("GET", "/runs/1/weights.json", None),
                                ("GET", "/guide.pdf", None)):
         code, out = req(public, method, path, body, host=HOST, headers=headers)
         assert (code, json.loads(out)) == (403, {"error": "forbidden"}), (why, path)

@@ -1,0 +1,30 @@
+# One neuron, 100 Poisson inputs, the first 50 correlated. STDP should pick out that group.
+seed = 0
+dt = 0.001
+out = "out/stdp"
+
+[task]
+name = "correlated"
+c = 0.3
+batches = 60
+
+[neuron]
+name = "lif"
+
+[synapse]
+name = "delta"
+
+[topology]
+name = "dense"
+
+[architecture]
+name = "layered"
+sizes = [100, 1]
+init = "uniform"
+weight_scale = 1.0
+
+[rule]
+name = "stdp"
+A_plus = 0.01
+A_minus = 0.0135
+w_max = 1.0

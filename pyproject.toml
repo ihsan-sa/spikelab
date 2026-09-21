@@ -1,0 +1,23 @@
+[project]
+name = "spikelab"
+version = "0.1.0"
+description = "A small workbench for spiking neural networks"
+requires-python = ">=3.12"
+dependencies = ["torch>=2.0", "numpy", "matplotlib"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+spikelab = "spikelab.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["spikelab"]
+package-data = {spikelab = ["web.html"]}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

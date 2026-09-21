@@ -20,6 +20,8 @@ Owner, #iiks1 1790020721.201009, 2026-09-21: "I want to make a spiking neural ne
 ## First run: small and cheap
 Owner, #iiks1 1790020802.388939, 2026-09-21: "keep the initial run more simple i dont want to run too much usage for this -- cost low, initial dev". So the first milestone is the smallest thing that shows the idea: one engine, one or two neuron models, STDP and one gradient rule, an interface as plain as a config file or a small CLI, and the short document. One Opus worker with a budget around $10, no parallel workers, no long planning context. Then stop, show him, and let him say what comes next.
 
+He added right after (1790020827.798069): "but quality high". Small in scope, not rough: what the first run does include is correct, checked against known results, cleanly split so the next piece drops in, and the document is good enough to show someone.
+
 ## Done
 He changes each of those five things from the interface and sees the network behave differently. The document with its diagrams is posted as a file in this project's channel.
 

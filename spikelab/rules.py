@@ -1,7 +1,8 @@
 """Learning rules.
 
 Contract: `Rule(**params).fit(net, task, gen) -> history`, history a dict of lists of floats
-plus "x_label" naming what one entry is (a batch, an epoch).
+plus "x_label" naming what one entry is (a batch, an epoch). A rule with `needs_labels = True`
+is refused by config.build for a task without labels, before anything runs.
 """
 from __future__ import annotations
 
@@ -57,11 +58,25 @@ class STDP:
         return hist
 
 
+@register("rule", "none")
+class NoLearning:
+    """No learning: the weights stay as initialised. Runs the task's metrics once."""
+
+    defaults = {}
+
+    def __init__(self, **p):
+        pass
+
+    def fit(self, net, task, gen):
+        return {"x_label": "run"} | {k: [v] for k, v in task.metrics(net).items()}
+
+
 @register("rule", "surrogate")
 class SurrogateBPTT:
     """Backprop through time with a fast-sigmoid surrogate gradient (SuperSpike / SpyTorch). Loss on output spike counts."""
 
     defaults = {"epochs": 30, "lr": 0.002, "slope": 10.0}
+    needs_labels = True
 
     def __init__(self, **p):
         self.p = {**self.defaults, **p}

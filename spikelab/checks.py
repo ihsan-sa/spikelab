@@ -6,8 +6,7 @@ import numpy as np
 import torch
 
 from . import config, registry
-from .network import Layer, Network
-from .spike import heaviside
+from .network import Layer, Network, drive
 
 
 def lif_rate_theory(I, tau=0.02, t_ref=0.002, R=1.0, v_th=1.0):
@@ -23,14 +22,18 @@ def lif_rate_sim(I, tau=0.02, t_ref=0.002, dt=1e-4, seconds=1.0):
     """Drive one LIF per current (batch = currents) and measure rate from the mean inter-spike interval."""
     registry.load_builtins()
     lif = registry.get("neuron", "lif")(1, dt, tau_mem=tau, t_ref=t_ref)
-    I = torch.tensor(np.asarray(I, dtype=np.float32)).reshape(-1, 1)
-    st = lif.init_state(len(I))
-    times = [[] for _ in range(len(I))]
-    for k in range(int(seconds / dt)):
-        s, st = lif.step(st, I, heaviside)
-        for b in torch.nonzero(s[:, 0]).flatten().tolist():
-            times[b].append(k * dt)
-    return np.array([(len(t) - 1) / (t[-1] - t[0]) if len(t) > 2 else 0.0 for t in times])
+    I = torch.tensor(np.asarray(I, dtype=np.float32)).reshape(1, -1, 1)
+    spikes, _ = drive(lif, I.expand(int(seconds / dt), -1, -1))
+    return isi_rate(spikes[:, :, 0], dt)
+
+
+def isi_rate(spikes, dt):
+    """Rate per column of spikes [T, n] from the mean inter-spike interval; 0 with fewer than 3 spikes."""
+    out = []
+    for col in spikes.T:
+        t = torch.nonzero(col).flatten().numpy() * dt
+        out.append((len(t) - 1) / (t[-1] - t[0]) if len(t) > 2 else 0.0)
+    return np.array(out)
 
 
 def stdp_window(deltas_ms, dt=1e-3, **params):
@@ -72,4 +75,4 @@ def bimodality(w, w_max):
     return float(((w < 0.1 * w_max) | (w > 0.9 * w_max)).mean())
 
 
-__all__ = ["lif_rate_theory", "lif_rate_sim", "stdp_window", "stdp_theory", "run_config", "bimodality"]
+__all__ = ["lif_rate_theory", "lif_rate_sim", "stdp_window", "stdp_theory", "run_config", "bimodality", "isi_rate"]

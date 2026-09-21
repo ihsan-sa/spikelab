@@ -15,10 +15,18 @@ button{margin:1em 0;padding:.5em 1.5em;font-size:1em}
 #figs img{max-width:100%;border:1px solid #e5e7eb;margin:.3em 0}
 pre{background:#f3f4f6;padding:.6em;overflow:auto}
 .doc{font-size:.85em;color:#6b7280}
+.top{display:flex;flex-wrap:wrap;gap:.8em;align-items:flex-start}
+#form{flex:1 1 480px}
+#net{flex:1 1 320px;max-width:560px;position:sticky;top:.5em}
+#net svg{width:100%;height:auto;border:1px solid #e5e7eb;border-radius:6px;background:#fff;font:11px system-ui,sans-serif}
+#net label{justify-content:flex-start}
+@media (max-width:700px){#net{order:-1;position:static}}  /* on a phone the diagram comes first */
 </style></head><body>
 <h1>spikelab</h1>
 <p><a href="/guide.pdf">Guide (PDF)</a></p>
-<div class="grid" id="form"></div>
+<div class="top"><div class="grid" id="form"></div>
+<div id="net"><svg id="sketch" viewBox="0 0 340 350" role="img" aria-label="network diagram"></svg>
+<label class="doc"><input type="checkbox" id="learned" disabled> show the last run's learned weights</label></div></div>
 <fieldset style="margin-top:.8em"><legend>run</legend>
 <label>seed <input type="number" id="seed"></label>
 <label>dt (s) <input type="number" step="any" id="dt"></label></fieldset>
@@ -68,6 +76,80 @@ function collect(){
   }
   return cfg;
 }
+// The network diagram: redrawn in the browser on every change, from the settings alone.
+const SHOW=12, SVGNS="http://www.w3.org/2000/svg";
+const COLOUR={input:"#9ca3af",current:"#f59e0b",hidden:"#2563eb",output:"#ea580c"};
+const TRAINS={stdp:"trains feed-forward weights only",surrogate:"trains all weights (incl. recurrent)",none:"no learning, weights stay as they start"};
+let RUN=null;  // the last run: {cfg, url, w}
+function rng(a){return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function shown(n){  // indices drawn for a layer of n; null is the "… +N" marker
+  if(n<=SHOW) return [...Array(n).keys()];
+  return [0,1,2,3,4,null,n-5,n-4,n-3,n-2,n-1];
+}
+function el(tag,a,text){const e=document.createElementNS(SVGNS,tag); for(const [k,v] of Object.entries(a)) e.setAttribute(k,v); if(text!=null) e.textContent=text; return e;}
+function sketch(cfg,learned){
+  const svg=document.getElementById("sketch"), sizes=cfg.architecture.sizes; svg.innerHTML="";
+  if(!Array.isArray(sizes)||sizes.length<2||!sizes.every(n=>Number.isInteger(n)&&n>=1)) return;
+  const L=sizes.length, W=Math.max(340,110*L), H=350, top=48, bot=H-80;
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  const xs=sizes.map((_,k)=>55+k*(W-110)/(L-1));
+  const cols=sizes.map(n=>shown(n).map((j,r,s)=>({j,y:s.length===1?(top+bot)/2:top+r*(bot-top)/(s.length-1)})));
+  const current=((REG.task.ok[cfg.task.name]||{}).drive||"spikes")==="current";
+  const sparse=cfg.topology.name==="sparse", p=+cfg.topology.p, rand=rng(+cfg.seed||0);
+  const layers=learned&&learned.layers, edges=[];
+  // which pairs are drawn: from the run's weights (null = no connection), else every pair (dense) or a seeded sample at p
+  const pick=(M,i,j)=>layers?(M&&M[i][j]!==null?M[i][j]:undefined):(!sparse||rand()<p?null:undefined);
+  for(let k=0;k+1<L;k++) for(const a of cols[k]) for(const b of cols[k+1]){
+    if(a.j===null||b.j===null) continue;
+    const w=pick(layers&&layers[k].W,a.j,b.j);
+    if(w!==undefined) edges.push({d:`M${xs[k]} ${a.y}L${xs[k+1]} ${b.y}`,w});
+  }
+  if(cfg.architecture.recurrent) for(let k=1;k+1<L;k++){  // hidden columns only; arcs right for i<j, left for i>j
+    const c=cols[k].filter(n=>n.j!==null);
+    for(const a of c) for(const b of c){
+      if(a.j===b.j||(!layers&&a.j>b.j)) continue;
+      const w=pick(layers&&layers[k-1].V,a.j,b.j);
+      const off=(a.j<b.j?1:-1)*(10+0.3*Math.abs(b.y-a.y));
+      if(w!==undefined) edges.push({d:`M${xs[k]} ${a.y}Q${xs[k]+off} ${(a.y+b.y)/2} ${xs[k]} ${b.y}`,w,rec:true});
+    }
+  }
+  const maxw=Math.max(1e-9,...edges.map(e=>Math.abs(e.w||0)));
+  const light=Math.max(0.12,Math.min(0.6,30/edges.length));
+  for(const e of edges){
+    const a={d:e.d,class:e.rec?"edge rec":"edge",fill:"none"};
+    if(e.w===null) Object.assign(a,{stroke:"#6b7280","stroke-width":0.8,"stroke-opacity":light});
+    else Object.assign(a,{stroke:e.w>=0?"#2563eb":"#dc2626","stroke-width":(0.3+2.7*Math.abs(e.w)/maxw).toFixed(2),"stroke-opacity":0.7});
+    svg.appendChild(el("path",a));
+  }
+  const nrn=cfg.neuron.name, syn=cfg.synapse.name, topo=sparse?`sparse p=${p}`:cfg.topology.name;
+  sizes.forEach((n,k)=>{
+    const role=k===0?(current?"current":"input"):k===L-1?"output":"hidden";
+    svg.appendChild(el("text",{x:xs[k],y:16,"text-anchor":"middle","font-weight":600},`${k===0?"input":role} ${n}`));
+    if(k===0) svg.appendChild(el("text",{x:xs[k],y:30,"text-anchor":"middle",fill:"#6b7280"},current?"current":"spikes"));
+    for(const c of cols[k]){
+      if(c.j===null) svg.appendChild(el("text",{class:"more",x:xs[k],y:c.y+4,"text-anchor":"middle",fill:"#6b7280"},`… +${n-10}`));
+      else svg.appendChild(el("circle",{class:"node",cx:xs[k],cy:c.y,r:6,fill:COLOUR[role],stroke:"#fff"}));
+    }
+    if(k>0||current) svg.appendChild(el("text",{x:xs[k],y:bot+22,"text-anchor":"middle"},nrn));
+    if(k+1<L) svg.appendChild(el("text",{x:(xs[k]+xs[k+1])/2,y:bot+38,"text-anchor":"middle",fill:"#6b7280","font-style":"italic"},`${syn} · ${topo}`));
+  });
+  const rule=cfg.rule.name;
+  svg.appendChild(el("text",{x:8,y:H-22},`rule ${rule}${TRAINS[rule]?": "+TRAINS[rule]:""}`));
+  svg.appendChild(el("text",{x:8,y:H-7,fill:"#6b7280"},layers?"learned weights: width by |w|, blue +, red −":
+    `a sketch; ${sizes.some(n=>n>SHOW)?"big layers show their first and last 5":"every neuron shown"}`));
+}
+function redraw(e){
+  const lc=document.getElementById("learned");
+  if(e&&e.target!==lc) lc.checked=false;  // a changed setting is no longer the run's network
+  if(lc.checked&&RUN){
+    if(RUN.w) return sketch(RUN.cfg,RUN.w);
+    return fetch(RUN.url).then(r=>r.ok?r.json():Promise.reject(r.status)).then(w=>{RUN.w=w; redraw();})
+      .catch(x=>{document.getElementById("err").textContent="could not load the weights: "+x; lc.checked=false;});
+  }
+  let cfg; try{cfg=collect();}catch(_){return;}  // a half-typed field keeps the last drawing
+  sketch(cfg,null);
+}
+document.addEventListener("input",redraw); document.addEventListener("change",redraw);
 document.getElementById("go").onclick=async()=>{
   const st=document.getElementById("status"), err=document.getElementById("err"); err.textContent="";
   let cfg; try{cfg=collect();}catch(e){err.textContent="bad field: "+e; return;}
@@ -80,9 +162,10 @@ document.getElementById("go").onclick=async()=>{
       document.getElementById("metrics").textContent=Object.entries(j.final).map(([k,v])=>`${k}: ${(+v).toFixed(3)}`).join("   ");
       document.getElementById("figs").innerHTML=j.figures.map(f=>`<img src="${f}">`).join("");
       document.getElementById("toml").textContent=j.toml;
+      RUN={cfg,url:j.weights,w:null}; const lc=document.getElementById("learned"); lc.disabled=false; if(lc.checked) redraw();
     }
   }catch(e){err.textContent=String(e); st.textContent="";}
   document.getElementById("go").disabled=false;
 };
-fetch("/api/state").then(r=>r.json()).then(j=>{REG=j.registry; CFG=j.config; build();});
+fetch("/api/state").then(r=>r.json()).then(j=>{REG=j.registry; CFG=j.config; build(); redraw();});
 </script></body></html>

@@ -26,9 +26,12 @@ Each part is a table in the config with a `name` and that part's parameters. Any
 
 **Learning rule** (`[rule]`).
 - `stdp` is pair STDP with traces. Each input and each neuron keeps a trace that jumps by 1 at a spike and decays with `tau_plus` or `tau_minus`. A post spike adds `A_plus` times the input's trace; an input spike subtracts `A_minus` times the neuron's trace. Weights stay in `[0, w_max]`. It trains the feed-forward weights, online, as the network runs.
+- `none` does no learning: the weights stay as they start. Useful to watch a network as it is.
 - `surrogate` is backprop through time. A spike is a step function, so its true gradient is zero almost everywhere and training stalls. The forward pass keeps the real step; the backward pass pretends its slope is a fast sigmoid, `1/(slope·|v − v_th| + 1)²`, as in Zenke's SuperSpike and SpyTorch. The loss is cross-entropy on the output layer's spike counts.
 
 **Task** (`[task]`) is where the input comes from. `patterns` is labelled: each class is a fixed spike-time template, seen with jitter, missing spikes and extra noise spikes. `correlated` has no labels: Poisson inputs where the first half share a common source.
+
+**Injecting a current** (`[task] name = "current"`). Instead of spikes, each input neuron gets a current, and the first layer (`sizes[0]` = `n_in`) is made of real neurons of the chosen type. `waveform` is `constant`, `step` (from `onset` to `offset`, in seconds), `ramp` (0 at `onset`, full `amplitude` from `offset` on) or `noisy` (constant plus noise of size `sigma` each step). `spread` gives the neurons different strengths, from `1 − spread` to `1 + spread` times `amplitude`. The current is in voltage units, so `amplitude` 1 is just at threshold for a `lif` with `R` = 1. It has no labels, so it runs with rule `none` or `stdp`; `surrogate` is refused by name. The raster and membrane figures show the current on top, and the membrane figure shows the driven input neurons. The neurons are stepped by the same code as the f-I check below, and a test checks a constant current gives the f-I rate.
 
 **Your own part.** Write a class, decorate it with `@register("neuron", "mine")`, put it in a file and add `plugins = ["my_neuron.py"]` at the top of the config. The contracts are in `spikelab/contracts.py`; the built-ins show the shape.
 
@@ -41,7 +44,7 @@ spikelab serve                          # http://127.0.0.1:8765/
 
 A run writes four figures: a spike raster, membrane traces, the first layer's weights, and the learning curve. It also writes `metrics.json` and the full config it ran, defaults filled in.
 
-The web page reads the registries, so a new part shows up in its dropdown by itself, and a broken one shows with its reason. Change anything, press Run, and the four figures appear on the page. The TOML of that run is at the bottom, ready to save and rerun. The page listens on 127.0.0.1 only and refuses requests for any other host name. The page links to this guide as a PDF. To put it online, see below.
+The web page reads the registries, so a new part shows up in its dropdown by itself, and a broken one shows with its reason. Change anything, press Run, and the four figures appear on the page. Next to the settings, a diagram of the network redraws as you type: one column per layer, the edges the topology allows (a seeded sample for `sparse`, so `p` thins them), arcs for recurrent weights, and the neuron, synapse and rule named on it. After a run, "show the last run's learned weights" redraws the edges from that run's real weights, width by size and colour by sign. The TOML of that run is at the bottom, ready to save and rerun. The page listens on 127.0.0.1 only and refuses requests for any other host name. The page links to this guide as a PDF. To put it online, see below.
 
 ![web page](img/web.png)
 

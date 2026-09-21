@@ -12,5 +12,26 @@ Restart=on-failure
 RestartSec=5
 Nice=10
 
+# Ceilings. A run is capped by spikelab/limits.py and by RLIMIT_AS in the worker; these bound the server
+# itself, which reads request bodies and forks the worker. Each is a backstop, not the first line.
+MemoryMax=4G
+TasksMax=64
+CPUQuota=200%
+
+# Sandbox. All of it passes `systemd-analyze --user verify`, and the first group was probed as applied
+# (NoNewPrivs set, seccomp filter loaded) in a throwaway user unit on Ubuntu with systemd 259.
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+# The three below need a mount namespace, which a user manager cannot make while unprivileged user
+# namespaces are restricted (kernel.apparmor_restrict_unprivileged_userns=1): systemd accepts them and
+# applies nothing. Kept because they are right if that ever changes; do not count on them today.
+# The run folder is the one writable path: create it (mkdir -p out) before starting.
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=%h/dev/spikelab/out
+
 [Install]
 WantedBy=default.target

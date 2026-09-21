@@ -1,0 +1,16 @@
+# systemd USER unit: the spikelab page in public mode on 127.0.0.1:8765, where the Cloudflare tunnel
+# (with Access in front) points. Needs public.toml in the checkout (copy public.example.toml). Install: see README.
+[Unit]
+Description=spikelab web page (public mode, behind Cloudflare Access)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/dev/spikelab
+ExecStart=%h/dev/spikelab/.venv/bin/spikelab serve configs/surrogate.toml --port 8765 --public-config public.toml
+Environment=OMP_NUM_THREADS=2
+Restart=on-failure
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=default.target

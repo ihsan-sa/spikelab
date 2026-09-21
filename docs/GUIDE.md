@@ -41,9 +41,25 @@ spikelab serve                          # http://127.0.0.1:8765/
 
 A run writes four figures: a spike raster, membrane traces, the first layer's weights, and the learning curve. It also writes `metrics.json` and the full config it ran, defaults filled in.
 
-The web page reads the registries, so a new part shows up in its dropdown by itself, and a broken one shows with its reason. Change anything, press Run, and the four figures appear on the page. The TOML of that run is at the bottom, ready to save and rerun. The page listens on 127.0.0.1 only and refuses requests for any other host name.
+The web page reads the registries, so a new part shows up in its dropdown by itself, and a broken one shows with its reason. Change anything, press Run, and the four figures appear on the page. The TOML of that run is at the bottom, ready to save and rerun. The page listens on 127.0.0.1 only and refuses requests for any other host name. The page links to this guide as a PDF. To put it online, see below.
 
 ![web page](img/web.png)
+
+## Putting it online
+
+The page can sit behind a public hostname, with Cloudflare Access doing the sign-in. It still listens on 127.0.0.1 only; a Cloudflare tunnel carries requests to it. Public mode is off unless you turn it on:
+
+```
+spikelab serve --public-config public.toml
+```
+
+`public.toml` holds four keys (copy `public.example.toml`): the hostname, the Access team, the Access application's AUD tag, and the emails allowed in. The same keys work as flags: `--public-host`, `--access-team`, `--access-aud`, `--allow-email` (repeat it).
+
+In public mode every request, including the page and the figures, must carry Cloudflare's signed sign-in token. The server checks its signature against the team's published keys, that it was issued for this application, that it has not expired, and that the email is on the list. Anything else gets a bare 403.
+
+The page always has limits, public or not; the command line has none. Layer sizes, total weights, time steps, samples, batch and epochs each have a cap, and a config over one is refused by name before it runs. Each run happens in its own process, which is killed after 60 seconds. Only one run goes at a time; a second gets a "busy" answer. The numbers are in `spikelab/limits.py`.
+
+`deploy/spikelab.service` runs public mode as a systemd user service. The README says how to install it.
 
 ## Checked against known results
 
@@ -71,4 +87,3 @@ Each of these is a test in `tests/test_correctness.py`. The figures come from `s
 - More neurons (Izhikevich, conductance synapses), delays, and inhibitory populations.
 - STDP variants: multiplicative weights, triplet STDP, reward-modulated STDP.
 - Real data such as spiking MNIST or SHD, once downloads are agreed.
-- Putting the page on a public hostname behind the box's sign-in. That needs the owner's approval.

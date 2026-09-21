@@ -1,0 +1,87 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>spikelab</title>
+<style>
+body{font:14px system-ui,sans-serif;margin:1.5em;color:#1f2937;max-width:1100px}
+h1{font-size:1.3em;margin:0 0 .6em}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.8em}
+fieldset{border:1px solid #d1d5db;border-radius:6px;padding:.5em .8em}
+legend{font-weight:600}
+label{display:flex;justify-content:space-between;gap:.5em;margin:.25em 0}
+input[type=text],input[type=number]{width:8em}
+select{width:100%}
+.broken{color:#b91c1c;font-size:.85em}
+button{margin:1em 0;padding:.5em 1.5em;font-size:1em}
+#err{color:#b91c1c;white-space:pre-wrap}
+#figs img{max-width:100%;border:1px solid #e5e7eb;margin:.3em 0}
+pre{background:#f3f4f6;padding:.6em;overflow:auto}
+.doc{font-size:.85em;color:#6b7280}
+</style></head><body>
+<h1>spikelab</h1>
+<div class="grid" id="form"></div>
+<fieldset style="margin-top:.8em"><legend>run</legend>
+<label>seed <input type="number" id="seed"></label>
+<label>dt (s) <input type="number" step="any" id="dt"></label></fieldset>
+<button id="go">Run</button> <span id="status"></span>
+<div id="err"></div><div id="metrics"></div><div id="figs"></div>
+<details><summary>this run as TOML (save it to rerun with <code>spikelab run</code>)</summary><pre id="toml"></pre></details>
+<script>
+const KINDS=["neuron","synapse","topology","architecture","rule","task"];
+let REG, CFG;
+function field(k,v){
+  const l=document.createElement("label"); l.textContent=k+" ";
+  const i=document.createElement("input"); i.dataset.key=k;
+  if(typeof v==="boolean"){i.type="checkbox";i.checked=v;i.dataset.t="bool";}
+  else if(typeof v==="number"){i.type="number";i.step="any";i.value=v;i.dataset.t="num";}
+  else if(Array.isArray(v)){i.type="text";i.value=JSON.stringify(v);i.dataset.t="json";}
+  else{i.type="text";i.value=v;i.dataset.t="str";}
+  l.appendChild(i); return l;
+}
+function params(kind){
+  const box=document.getElementById("p-"+kind), name=document.getElementById("s-"+kind).value;
+  const c=REG[kind].ok[name]; box.innerHTML="";
+  const d=document.createElement("div"); d.className="doc"; d.textContent=c.doc; box.appendChild(d);
+  const cur=CFG[kind]&&CFG[kind].name===name?CFG[kind]:{};
+  for(const [k,v] of Object.entries(c.defaults)) box.appendChild(field(k,k in cur?cur[k]:v));
+}
+function build(){
+  const form=document.getElementById("form");
+  for(const kind of KINDS){
+    const fs=document.createElement("fieldset"); fs.innerHTML=`<legend>${kind}</legend>`;
+    const s=document.createElement("select"); s.id="s-"+kind;
+    for(const n of Object.keys(REG[kind].ok)){const o=new Option(n,n); s.add(o);}
+    for(const [n,why] of Object.entries(REG[kind].broken)){const o=new Option(n+" (broken)",n); o.disabled=true; o.title=why; s.add(o);}
+    s.value=CFG[kind].name; s.onchange=()=>params(kind); fs.appendChild(s);
+    for(const [n,why] of Object.entries(REG[kind].broken)){const b=document.createElement("div"); b.className="broken"; b.textContent=n+": "+why; fs.appendChild(b);}
+    const p=document.createElement("div"); p.id="p-"+kind; fs.appendChild(p); form.appendChild(fs); params(kind);
+  }
+  document.getElementById("seed").value=CFG.seed; document.getElementById("dt").value=CFG.dt;
+}
+function collect(){
+  const cfg={seed:+document.getElementById("seed").value, dt:+document.getElementById("dt").value};
+  for(const kind of KINDS){
+    const sec={name:document.getElementById("s-"+kind).value};
+    for(const i of document.querySelectorAll(`#p-${kind} input`)){
+      const t=i.dataset.t; sec[i.dataset.key]= t==="bool"?i.checked : t==="num"?+i.value : t==="json"?JSON.parse(i.value) : i.value;
+    }
+    cfg[kind]=sec;
+  }
+  return cfg;
+}
+document.getElementById("go").onclick=async()=>{
+  const st=document.getElementById("status"), err=document.getElementById("err"); err.textContent="";
+  let cfg; try{cfg=collect();}catch(e){err.textContent="bad field: "+e; return;}
+  st.textContent="running…"; document.getElementById("go").disabled=true;
+  try{
+    const r=await fetch("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)}); const j=await r.json();
+    if(!r.ok){err.textContent=j.error; st.textContent="";}
+    else{
+      st.textContent=`done in ${j.seconds}s`;
+      document.getElementById("metrics").textContent=Object.entries(j.final).map(([k,v])=>`${k}: ${(+v).toFixed(3)}`).join("   ");
+      document.getElementById("figs").innerHTML=j.figures.map(f=>`<img src="${f}">`).join("");
+      document.getElementById("toml").textContent=j.toml;
+    }
+  }catch(e){err.textContent=String(e); st.textContent="";}
+  document.getElementById("go").disabled=false;
+};
+fetch("/api/state").then(r=>r.json()).then(j=>{REG=j.registry; CFG=j.config; build();});
+</script></body></html>

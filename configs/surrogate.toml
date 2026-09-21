@@ -1,0 +1,31 @@
+# Classify 4 spike-time patterns with surrogate-gradient BPTT.
+seed = 0
+dt = 0.001
+out = "out/surrogate"
+
+[task]
+name = "patterns"
+
+[neuron]
+name = "lif"
+tau_mem = 0.02
+
+[synapse]
+name = "exponential"
+tau_syn = 0.005
+
+[topology]
+name = "dense"
+
+[architecture]
+name = "layered"
+sizes = [40, 64, 4]
+recurrent = false
+init = "normal"
+weight_scale = 30.0
+
+[rule]
+name = "surrogate"
+epochs = 15
+lr = 0.03
+slope = 2.0

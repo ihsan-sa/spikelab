@@ -14,4 +14,4 @@ Public mode (behind Cloudflare Access; see the guide, "Putting it online"). As a
 `cp public.example.toml public.toml` and fill it in; `cp deploy/spikelab.service ~/.config/systemd/user/`;
 `systemctl --user daemon-reload && systemctl --user enable --now spikelab`. It serves 127.0.0.1:8765 only; stop any local `spikelab serve` on that port first.
 
-Tests: `.venv/bin/pytest` (about 75 s). Guide figures: `.venv/bin/python scripts/make_figures.py`, then `.venv/bin/python scripts/build_doc.py` for the web screenshot and the PDF.
+Tests: `.venv/bin/pytest` (about 75 s). GitHub Actions runs the same tests on every PR and push to main; see the Actions tab (https://github.com/ihsan-sa/spikelab/actions). Guide figures: `.venv/bin/python scripts/make_figures.py`, then `.venv/bin/python scripts/build_doc.py` for the web screenshot and the PDF.
